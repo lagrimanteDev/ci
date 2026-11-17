@@ -1,45 +1,70 @@
-name: Publicação Automática (CD)
+name: Validação de Pull Request (CI)
 
 on:
-  push:
+  pull_request:
     branches:
       - main
 
-# Define as permissões necessárias para o GitHub Actions interagir com o GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Garante que apenas um deploy aconteça por vez para evitar conflitos
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
-  deploy-pages:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  validate-pr:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Baixa o código atualizado da branch main
+      # 1. Baixa o código do repositório no Runner
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Configura os metadados do GitHub Pages no ambiente
-      - name: Configurar ambiente do Pages
-        uses: actions/configure-pages@v5
+      # 2. Verifica a existência obrigatória do arquivo index.html na raiz
+      - name: Validar existência do index.html na raiz
+        run: |
+          if [ ! -f "index.html" ]; then
+            echo "ERR: O arquivo 'index.html' não foi encontrado na raiz do projeto!"
+            exit 1
+          fi
 
-      # 3. Compacta os arquivos da raiz do projeto para o formato do Pages
-      - name: Upload dos artefatos do site
-        uses: actions/upload-pages-artifact@v3
+      # 3. Impede arquivos individuais maiores que 500KB
+      - name: Verificar limite de tamanho de arquivos (Máx 500KB)
+        run: |
+          echo "Buscando arquivos maiores que 500KB..."
+          LARGE_FILES=$(find . -type f -not -path '*/.*' -size +500k)
+          if [ ! -z "$LARGE_FILES" ]; then
+            echo "ERR: Os seguintes arquivos excedem o limite de 500KB:"
+            echo "$LARGE_FILES"
+            exit 1
+          fi
+
+      # 4. Varredura de texto (TODO, FIXME, senha, password)
+      - name: Varredura de termos proibidos e sensíveis
+        run: |
+          echo "Verificando termos proibidos..."
+          # Busca ignorando maiúsculas/minúsculas e oculta a pasta .git
+          ERRORS=$(grep -rnEi "TODO|FIXME|senha|password" --exclude-dir=.git .)
+          if [ ! -z "$ERRORS" ]; then
+            echo "ERR: Termos proibidos encontrados no código:"
+            echo "$ERRORS"
+            exit 1
+          fi
+
+      # 5. Instala o ambiente Node.js para ferramentas de validação
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
         with:
-          # Define a raiz (.) como origem, onde o index.html validado está localizado
-          path: '.'
+          node-size: 20
 
-      # 4. Realiza o deploy (publicação) no servidor do GitHub Pages
-      - name: Implantar no GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # 6. Instala dependências do Linter e do Validador de Links
+      - name: Instalar dependências de validação
+        run: |
+          npm install -g htmlhint html-validator-cli
+
+      # 7. Executa o Linter HTML para garantir padrões técnicos
+      - name: Executar Linter HTML
+        run: |
+          echo "Executando HTMLHint..."
+          htmlhint "**/*.html"
+
+      # 8. Verificação automatizada de tags de links e caminhos
+      - name: Verificar links e caminhos quebrados
+        run: |
+          echo "Validando links nas páginas HTML..."
+          # Procura por links quebrados ou mal estruturados no index.html
+          html-validator --file=index.html --format=text
