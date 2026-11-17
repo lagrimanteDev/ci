@@ -8,6 +8,11 @@ on:
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
+    
+    # Etapa 5: Estratégia de Matriz para rodar Node 18 e 20 em paralelo
+    strategy:
+      matrix:
+        node-version: [18, 20]
 
     steps:
       # 1. Baixa o código do repositório no Runner
@@ -37,7 +42,6 @@ jobs:
       - name: Varredura de termos proibidos e sensíveis
         run: |
           echo "Verificando termos proibidos..."
-          # Busca ignorando maiúsculas/minúsculas e oculta a pasta .git
           ERRORS=$(grep -rnEi "TODO|FIXME|senha|password" --exclude-dir=.git .)
           if [ ! -z "$ERRORS" ]; then
             echo "ERR: Termos proibidos encontrados no código:"
@@ -45,11 +49,11 @@ jobs:
             exit 1
           fi
 
-      # 5. Instala o ambiente Node.js para ferramentas de validação
-      - name: Configurar Node.js
+      # 5. Instala o ambiente Node.js dinamicamente com base na Matriz (Corrigido node-version)
+      - name: Configurar Node.js (Versão ${{ matrix.node-version }})
         uses: actions/setup-node@v4
         with:
-          node-size: 20
+          node-version: ${{ matrix.node-version }}
 
       # 6. Instala dependências do Linter e do Validador de Links
       - name: Instalar dependências de validação
@@ -66,30 +70,4 @@ jobs:
       - name: Verificar links e caminhos quebrados
         run: |
           echo "Validando links nas páginas HTML..."
-          # Procura por links quebrados ou mal estruturados no index.html
           html-validator --file=index.html --format=text
-
-
-      # 9. Notificação de falha por E-mail (Apenas se o deploy falhar)
-      - name: Enviar E-mail de Alerta de Falha
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          # Configurações do servidor (Exemplo usando o Gmail)
-          server_address: ://gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          
-          # Conteúdo do E-mail
-          subject: "🚨 ALERTA: Falha no Deploy do GitHub Pages!"
-          to: hlagrimante@gmail.com
-          from: GitHub Actions Bot
-          body: |
-            Atenção equipe,
-            
-            O deploy automático da branch 'main' falhou recentemente na pipeline de CD.
-            Nenhuma alteração foi colocada no ar para garantir a estabilidade do servidor.
-            
-            Por favor, acessem os logs do GitHub para identificar e corrigir o problema:
-            https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}
