@@ -1,0 +1,61 @@
+name: Publicação Automática (CD)
+
+on:
+  push:
+    branches:
+      - main
+
+# Etapa 2: Permissões explícitas para o GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-pages:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar ambiente do Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload dos artefatos do site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Implantar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Etapa 4: Notificação de falha por E-mail ajustada e corrigida
+      - name: Enviar E-mail de Alerta de Falha
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          
+          subject: "🚨 ALERTA: Falha no Deploy do GitHub Pages!"
+          to: hlagrimante@gmail.com
+          from: GitHub Actions Bot
+          body: |
+            Atenção equipe,
+            
+            O deploy automático da branch 'main' falhou recentemente na pipeline de CD.
+            Nenhuma alteração foi colocada no ar para garantir a estabilidade do servidor.
+            
+            Por favor, acessem os logs do GitHub para identificar e corrigir o problema:
+            https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}
